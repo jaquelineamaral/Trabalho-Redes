@@ -10,29 +10,25 @@ client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
 # Dados sintéticos para envio (10MB)
 data_size = 10 * 1024 * 1024  # 10MB
-data = "0" * data_size
+data = "A" * data_size
 
 # Configurações do buffer de pacotes
 buffer_size = 10  # Tamanho do buffer em pacotes
 packet_size = 1024  # Tamanho máximo de cada pacote em bytes
 
 # Variáveis de controle de timeout e retransmissão
-timeout = 2.0  # Tempo em segundos para timeout
-last_ack_received = -1  # Último ACK recebido
+timeout = 0.1  # Tempo em segundos para timeout
 packets_sent = []  # Lista para armazenar os pacotes enviados
+last_ack_received = -1  # Último ACK recebido
+
+# Variáveis de controle de congestionamento
+window_size = 1  # Tamanho inicial da janela
+congestion_threshold = 10  # Limiar de congestão
 
 # Função para enviar pacotes
 def send_packet(packet, sequence_number):
     client_socket.sendto(packet.encode(), (server_ip, server_port))
     #print("Enviado pacote com sequência", sequence_number)
-
-# Função para retransmitir pacotes
-def resend_packets(start_sequence_number):
-    for i in range(start_sequence_number, len(data), packet_size):
-        message = data[i:i+packet_size]
-        sequence_number = i // packet_size  # Números de sequência incrementados
-        packet = f"{sequence_number}|{message}"
-        send_packet(packet, sequence_number)
 
 # Enviar pacotes
 for i in range(0, len(data), packet_size):
@@ -44,8 +40,6 @@ for i in range(0, len(data), packet_size):
 
 # Definir o timeout inicial
 start_time = time.time()
-timeout_expired = False
-start_sequence_number = 0
 
 # Aguardar ACKs e tratar timeouts e retransmissões
 while packets_sent:
@@ -58,26 +52,29 @@ while packets_sent:
         print("Recebido ACK:", ack_number)
 
         # Verificar se o ACK é válido
-        if ack_number >= start_sequence_number:
-            start_sequence_number = ack_number + 1
-            timeout_expired = False
-
-            # Remover pacotes confirmados da lista de pacotes enviados
-            packets_sent = [(packet, sequence_number) for packet, sequence_number in packets_sent if sequence_number >= start_sequence_number]
+        if ack_number == last_ack_received + 1:
+            last_ack_received = ack_number
+            packets_sent = [(packet, sequence_number) for packet, sequence_number in packets_sent if sequence_number > ack_number]
+            window_size = min(window_size + 1, congestion_threshold)  # Aumentar a janela em 1 até o limite de congestão
 
     except socket.timeout:
-        if not timeout_expired:
-            print("Timeout: retransmitindo pacotes de sequência", start_sequence_number)
-            timeout_expired = True
+        #print("Timeout: retransmitindo pacotes...")
+        window_size = max(1, window_size // 2)  # Reduzir a janela pela metade
 
-            resend_packets(start_sequence_number)
+        for packet, sequence_number in packets_sent[:window_size]:
+            send_packet(packet, sequence_number)
 
     # Verificar se ocorreu timeout
     if time.time() - start_time > timeout:
-        print("Timeout: retransmitindo pacotes de sequência", start_sequence_number)
-        start_time = time.time()
+        #print("Timeout: retransmitindo pacotes...")
+        window_size = max(1, window_size // 2)  # Reduzir a janela pela metade
 
-        resend_packets(start_sequence_number)
+        for packet, sequence_number in packets_sent[:window_size]:
+            send_packet(packet, sequence_number)
+
+        # Verificar se atingiu o limiar de congestão
+        if window_size < congestion_threshold:
+            window_size += 1  # Aumentar a janela em 1
 
 # Fechamento do socket
 client_socket.close()

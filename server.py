@@ -39,8 +39,6 @@ class MessageBuffer:
                 self.deliver_ordered_messages()
             else:
                 print("Pacote com sequência", sequence_number, "descartado (simulação de perda)")
-                # Simular um timeout no cliente, não enviando ACK imediatamente
-                time.sleep(5)
 
     def deliver_ordered_messages(self):
         global next_sequence_number
