@@ -1,5 +1,6 @@
 import socket
 import time
+import matplotlib.pyplot as plt
 
 # Configurações do servidor
 server_ip = '127.0.0.1'
@@ -24,6 +25,27 @@ last_ack_received = -1  # Último ACK recebido
 # Variáveis de controle de congestionamento
 window_size = 1  # Tamanho inicial da janela
 congestion_threshold = 10  # Limiar de congestão
+
+# Variáveis para coletar dados de tempo e vazão
+time_list = []  # Lista para armazenar o tempo
+throughputs = []  # Lista para armazenar as vazões
+
+# Variável para armazenar o tempo de início
+start_timet = None
+
+# Calculo do tempo decorrido para evitar divisão por zero
+def calculate_elapsed_time():
+    global start_timet
+    if start_timet is None:
+        start_timet = time.time()
+    return (time.time() - start_timet)
+
+# Função para calcular a vazão; retorno da função é em bps
+def calculate_throughput(sequence_number):
+    elapsed_time = calculate_elapsed_time()
+    if elapsed_time > 0:
+        return (sequence_number + 1) * packet_size * 8 / elapsed_time
+    return 0
 
 # Função para enviar pacotes
 def send_packet(packet, sequence_number):
@@ -75,6 +97,21 @@ while packets_sent:
         # Verificar se atingiu o limiar de congestão
         if window_size < congestion_threshold:
             window_size += 1  # Aumentar a janela em 1
+
+    throughput = calculate_throughput(last_ack_received)
+    aux_elapsed_time = calculate_elapsed_time()
+    time_list.append(aux_elapsed_time)
+    throughputs.append(throughput)
+
+print("Vazão: " + str(max(throughputs)))
+print("Tempo: " + str(aux_elapsed_time))
+
+# Plotar o gráfico tempo (s) x vazão (bps)
+plt.plot(time_list, throughputs)
+plt.xlabel('Tempo (s)')
+plt.ylabel('Vazão (bps)')
+plt.title('Tempo x Vazão')
+plt.show()
 
 # Fechamento do socket
 client_socket.close()
